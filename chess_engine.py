@@ -1,109 +1,108 @@
 #!/usr/bin/env python3
-"""Minimal chess engine — board representation + minimax evaluation."""
-import sys
-
-PIECES = {'P': 100, 'N': 320, 'B': 330, 'R': 500, 'Q': 900, 'K': 20000,
-          'p': -100, 'n': -320, 'b': -330, 'r': -500, 'q': -900, 'k': -20000}
-
-INIT_BOARD = [
-    list("rnbqkbnr"), list("pppppppp"),
-    list("........"), list("........"),
-    list("........"), list("........"),
-    list("PPPPPPPP"), list("RNBQKBNR"),
-]
-
-class Chess:
-    def __init__(self):
-        self.board = [row[:] for row in INIT_BOARD]
-    def at(self, r, c):
-        if 0 <= r < 8 and 0 <= c < 8: return self.board[r][c]
-        return None
-    def is_white(self, p): return p.isupper()
-    def evaluate(self):
-        score = 0
-        for r in range(8):
-            for c in range(8):
-                p = self.board[r][c]
-                if p != '.': score += PIECES.get(p, 0)
-        return score
-    def moves(self, white=True):
-        result = []
-        for r in range(8):
-            for c in range(8):
-                p = self.board[r][c]
-                if p == '.' or self.is_white(p) != white: continue
-                pt = p.upper()
-                if pt == 'P':
-                    d = -1 if white else 1
-                    if self.at(r+d, c) == '.':
-                        result.append((r, c, r+d, c))
-                    for dc in [-1, 1]:
-                        t = self.at(r+d, c+dc)
-                        if t and t != '.' and self.is_white(t) != white:
-                            result.append((r, c, r+d, c+dc))
-                elif pt in ('N',):
-                    for dr, dc in [(-2,-1),(-2,1),(-1,-2),(-1,2),(1,-2),(1,2),(2,-1),(2,1)]:
-                        t = self.at(r+dr, c+dc)
-                        if t is not None and (t == '.' or self.is_white(t) != white):
-                            result.append((r, c, r+dr, c+dc))
-                elif pt in ('B', 'R', 'Q', 'K'):
-                    dirs = []
-                    if pt in ('B', 'Q'): dirs += [(-1,-1),(-1,1),(1,-1),(1,1)]
-                    if pt in ('R', 'Q'): dirs += [(-1,0),(1,0),(0,-1),(0,1)]
-                    if pt == 'K': dirs = [(-1,-1),(-1,0),(-1,1),(0,-1),(0,1),(1,-1),(1,0),(1,1)]
-                    for dr, dc in dirs:
-                        nr, nc = r+dr, c+dc
-                        while True:
-                            t = self.at(nr, nc)
-                            if t is None: break
-                            if t == '.': result.append((r, c, nr, nc))
-                            elif self.is_white(t) != white:
-                                result.append((r, c, nr, nc)); break
-                            else: break
-                            if pt == 'K': break
-                            nr += dr; nc += dc
-        return result
-    def make_move(self, r1, c1, r2, c2):
-        b = Chess(); b.board = [row[:] for row in self.board]
-        b.board[r2][c2] = b.board[r1][c1]; b.board[r1][c1] = '.'
-        return b
-    def minimax(self, depth, white, alpha=-99999, beta=99999):
-        if depth == 0: return self.evaluate(), None
-        moves = self.moves(white)
-        if not moves: return self.evaluate(), None
-        best_move = None
-        if white:
-            best = -99999
-            for m in moves:
-                b = self.make_move(*m)
-                score, _ = b.minimax(depth-1, False, alpha, beta)
-                if score > best: best = score; best_move = m
-                alpha = max(alpha, best)
-                if beta <= alpha: break
-        else:
-            best = 99999
-            for m in moves:
-                b = self.make_move(*m)
-                score, _ = b.minimax(depth-1, True, alpha, beta)
-                if score < best: best = score; best_move = m
-                beta = min(beta, best)
-                if beta <= alpha: break
-        return best, best_move
-    def render(self):
-        lines = ["  a b c d e f g h"]
-        for r in range(8):
-            row = f"{8-r} " + " ".join(self.board[r]) + f" {8-r}"
-            lines.append(row)
-        lines.append("  a b c d e f g h")
-        return "\n".join(lines)
-
-if __name__ == "__main__":
-    depth = int(sys.argv[1]) if len(sys.argv) > 1 else 3
-    game = Chess()
-    print(game.render())
-    score, move = game.minimax(depth, True)
-    if move:
-        r1, c1, r2, c2 = move
-        print(f"\nBest white move (depth {depth}): {chr(c1+97)}{8-r1} -> {chr(c2+97)}{8-r2} (eval: {score})")
-        game = game.make_move(*move)
-        print(game.render())
+"""Simple chess engine with move generation and evaluation."""
+PIECES="PNBRQKpnbrqk"
+INIT_BOARD="rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR"
+def parse_fen(fen):
+    board=[]
+    for row in fen.split("/"):
+        r=[]
+        for c in row:
+            if c.isdigit(): r.extend(["."] * int(c))
+            else: r.append(c)
+        board.append(r)
+    return board
+def to_fen(board):
+    rows=[]
+    for row in board:
+        s="";empty=0
+        for c in row:
+            if c==".": empty+=1
+            else:
+                if empty: s+=str(empty);empty=0
+                s+=c
+        if empty: s+=str(empty)
+        rows.append(s)
+    return "/".join(rows)
+def evaluate(board):
+    values={"P":1,"N":3,"B":3,"R":5,"Q":9,"K":0,"p":-1,"n":-3,"b":-3,"r":-5,"q":-9,"k":0}
+    score=0
+    for row in board:
+        for c in row:
+            if c in values: score+=values[c]
+    return score
+def gen_moves(board,white=True):
+    moves=[]
+    for r in range(8):
+        for c in range(8):
+            p=board[r][c]
+            if p=="." or (white and p.islower()) or (not white and p.isupper()): continue
+            if p in "Pp":
+                d=-1 if p.isupper() else 1
+                if 0<=r+d<8 and board[r+d][c]==".": moves.append((r,c,r+d,c))
+                for dc in [-1,1]:
+                    if 0<=r+d<8 and 0<=c+dc<8:
+                        t=board[r+d][c+dc]
+                        if t!="." and t.islower()!=p.islower(): moves.append((r,c,r+d,c+dc))
+            if p in "Nn":
+                for dr,dc in [(-2,-1),(-2,1),(-1,-2),(-1,2),(1,-2),(1,2),(2,-1),(2,1)]:
+                    nr,nc=r+dr,c+dc
+                    if 0<=nr<8 and 0<=nc<8:
+                        t=board[nr][nc]
+                        if t=="." or t.islower()!=p.islower(): moves.append((r,c,nr,nc))
+            if p in "BbQq":
+                for dr,dc in [(-1,-1),(-1,1),(1,-1),(1,1)]:
+                    nr,nc=r+dr,c+dc
+                    while 0<=nr<8 and 0<=nc<8:
+                        t=board[nr][nc]
+                        if t==".": moves.append((r,c,nr,nc))
+                        elif t.islower()!=p.islower(): moves.append((r,c,nr,nc));break
+                        else: break
+                        nr+=dr;nc+=dc
+            if p in "RrQq":
+                for dr,dc in [(-1,0),(1,0),(0,-1),(0,1)]:
+                    nr,nc=r+dr,c+dc
+                    while 0<=nr<8 and 0<=nc<8:
+                        t=board[nr][nc]
+                        if t==".": moves.append((r,c,nr,nc))
+                        elif t.islower()!=p.islower(): moves.append((r,c,nr,nc));break
+                        else: break
+                        nr+=dr;nc+=dc
+            if p in "Kk":
+                for dr in [-1,0,1]:
+                    for dc in [-1,0,1]:
+                        if dr==0 and dc==0: continue
+                        nr,nc=r+dr,c+dc
+                        if 0<=nr<8 and 0<=nc<8:
+                            t=board[nr][nc]
+                            if t=="." or t.islower()!=p.islower(): moves.append((r,c,nr,nc))
+    return moves
+def minimax(board,depth,white,alpha=-9999,beta=9999):
+    if depth==0: return evaluate(board),None
+    moves=gen_moves(board,white)
+    if not moves: return evaluate(board),None
+    best_move=None
+    if white:
+        best=-9999
+        for m in moves:
+            b2=[row[:] for row in board];b2[m[2]][m[3]]=b2[m[0]][m[1]];b2[m[0]][m[1]]="."
+            val,_=minimax(b2,depth-1,False,alpha,beta)
+            if val>best: best=val;best_move=m
+            alpha=max(alpha,val)
+            if beta<=alpha: break
+    else:
+        best=9999
+        for m in moves:
+            b2=[row[:] for row in board];b2[m[2]][m[3]]=b2[m[0]][m[1]];b2[m[0]][m[1]]="."
+            val,_=minimax(b2,depth-1,True,alpha,beta)
+            if val<best: best=val;best_move=m
+            beta=min(beta,val)
+            if beta<=alpha: break
+    return best,best_move
+if __name__=="__main__":
+    board=parse_fen(INIT_BOARD)
+    moves=gen_moves(board,True)
+    print(f"Starting position: {len(moves)} moves for white")
+    assert len(moves)==20
+    val,move=minimax(board,2,True)
+    print(f"Best move (depth 2): {move}, eval={val}")
+    print("Chess engine OK")
