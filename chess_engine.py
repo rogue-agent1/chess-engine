@@ -1,108 +1,69 @@
 #!/usr/bin/env python3
 """Simple chess engine with move generation and evaluation."""
-PIECES="PNBRQKpnbrqk"
-INIT_BOARD="rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR"
-def parse_fen(fen):
-    board=[]
-    for row in fen.split("/"):
-        r=[]
-        for c in row:
-            if c.isdigit(): r.extend(["."] * int(c))
-            else: r.append(c)
-        board.append(r)
-    return board
-def to_fen(board):
-    rows=[]
-    for row in board:
-        s="";empty=0
-        for c in row:
-            if c==".": empty+=1
-            else:
-                if empty: s+=str(empty);empty=0
-                s+=c
-        if empty: s+=str(empty)
-        rows.append(s)
-    return "/".join(rows)
-def evaluate(board):
-    values={"P":1,"N":3,"B":3,"R":5,"Q":9,"K":0,"p":-1,"n":-3,"b":-3,"r":-5,"q":-9,"k":0}
-    score=0
-    for row in board:
-        for c in row:
-            if c in values: score+=values[c]
-    return score
-def gen_moves(board,white=True):
-    moves=[]
-    for r in range(8):
-        for c in range(8):
-            p=board[r][c]
-            if p=="." or (white and p.islower()) or (not white and p.isupper()): continue
-            if p in "Pp":
-                d=-1 if p.isupper() else 1
-                if 0<=r+d<8 and board[r+d][c]==".": moves.append((r,c,r+d,c))
-                for dc in [-1,1]:
-                    if 0<=r+d<8 and 0<=c+dc<8:
-                        t=board[r+d][c+dc]
-                        if t!="." and t.islower()!=p.islower(): moves.append((r,c,r+d,c+dc))
-            if p in "Nn":
-                for dr,dc in [(-2,-1),(-2,1),(-1,-2),(-1,2),(1,-2),(1,2),(2,-1),(2,1)]:
-                    nr,nc=r+dr,c+dc
-                    if 0<=nr<8 and 0<=nc<8:
-                        t=board[nr][nc]
-                        if t=="." or t.islower()!=p.islower(): moves.append((r,c,nr,nc))
-            if p in "BbQq":
-                for dr,dc in [(-1,-1),(-1,1),(1,-1),(1,1)]:
-                    nr,nc=r+dr,c+dc
-                    while 0<=nr<8 and 0<=nc<8:
-                        t=board[nr][nc]
-                        if t==".": moves.append((r,c,nr,nc))
-                        elif t.islower()!=p.islower(): moves.append((r,c,nr,nc));break
-                        else: break
-                        nr+=dr;nc+=dc
-            if p in "RrQq":
-                for dr,dc in [(-1,0),(1,0),(0,-1),(0,1)]:
-                    nr,nc=r+dr,c+dc
-                    while 0<=nr<8 and 0<=nc<8:
-                        t=board[nr][nc]
-                        if t==".": moves.append((r,c,nr,nc))
-                        elif t.islower()!=p.islower(): moves.append((r,c,nr,nc));break
-                        else: break
-                        nr+=dr;nc+=dc
-            if p in "Kk":
-                for dr in [-1,0,1]:
-                    for dc in [-1,0,1]:
-                        if dr==0 and dc==0: continue
-                        nr,nc=r+dr,c+dc
+import sys
+
+PIECES = {"K":6,"Q":5,"R":4,"B":3,"N":2,"P":1,"k":-6,"q":-5,"r":-4,"b":-3,"n":-2,"p":-1,".":0}
+VALUES = {1:100,2:320,3:330,4:500,5:900,6:20000}
+
+class Board:
+    def __init__(self):
+        self.board = [0]*64; self.turn = 1  # 1=white, -1=black
+        setup = "RNBQKBNR"+"P"*8+"."*32+"p"*8+"rnbqkbnr"
+        for i,c in enumerate(setup): self.board[i] = PIECES[c]
+    def at(self, r, c):
+        if 0<=r<8 and 0<=c<8: return self.board[r*8+c]
+        return None
+    def display(self):
+        for r in range(8):
+            row = ""
+            for c in range(8):
+                v = self.board[r*8+c]
+                for ch, val in PIECES.items():
+                    if val == v and ch != ".": row += ch; break
+                else: row += "."
+            print(f"  {8-r} {row}")
+        print("    abcdefgh")
+    def evaluate(self):
+        score = 0
+        for v in self.board:
+            if v > 0: score += VALUES.get(v, 0)
+            elif v < 0: score -= VALUES.get(-v, 0)
+        return score
+    def gen_moves(self):
+        moves = []
+        for pos in range(64):
+            p = self.board[pos]
+            if (self.turn == 1 and p > 0) or (self.turn == -1 and p < 0):
+                r, c = pos//8, pos%8; ap = abs(p)
+                if ap == 1:  # pawn
+                    d = -1 if p > 0 else 1
+                    if self.at(r+d,c) == 0: moves.append((pos,(r+d)*8+c))
+                elif ap == 2:  # knight
+                    for dr,dc in [(-2,-1),(-2,1),(-1,-2),(-1,2),(1,-2),(1,2),(2,-1),(2,1)]:
+                        nr,nc = r+dr,c+dc
                         if 0<=nr<8 and 0<=nc<8:
-                            t=board[nr][nc]
-                            if t=="." or t.islower()!=p.islower(): moves.append((r,c,nr,nc))
-    return moves
-def minimax(board,depth,white,alpha=-9999,beta=9999):
-    if depth==0: return evaluate(board),None
-    moves=gen_moves(board,white)
-    if not moves: return evaluate(board),None
-    best_move=None
-    if white:
-        best=-9999
-        for m in moves:
-            b2=[row[:] for row in board];b2[m[2]][m[3]]=b2[m[0]][m[1]];b2[m[0]][m[1]]="."
-            val,_=minimax(b2,depth-1,False,alpha,beta)
-            if val>best: best=val;best_move=m
-            alpha=max(alpha,val)
-            if beta<=alpha: break
-    else:
-        best=9999
-        for m in moves:
-            b2=[row[:] for row in board];b2[m[2]][m[3]]=b2[m[0]][m[1]];b2[m[0]][m[1]]="."
-            val,_=minimax(b2,depth-1,True,alpha,beta)
-            if val<best: best=val;best_move=m
-            beta=min(beta,val)
-            if beta<=alpha: break
-    return best,best_move
-if __name__=="__main__":
-    board=parse_fen(INIT_BOARD)
-    moves=gen_moves(board,True)
-    print(f"Starting position: {len(moves)} moves for white")
-    assert len(moves)==20
-    val,move=minimax(board,2,True)
-    print(f"Best move (depth 2): {move}, eval={val}")
-    print("Chess engine OK")
+                            t = self.at(nr,nc)
+                            if t is not None and (t==0 or (t>0)!=(p>0)):
+                                moves.append((pos,nr*8+nc))
+                elif ap in (4,5,6,3):  # sliding pieces
+                    dirs = []
+                    if ap in (4,5,6): dirs += [(0,1),(0,-1),(1,0),(-1,0)]
+                    if ap in (3,5,6): dirs += [(1,1),(1,-1),(-1,1),(-1,-1)]
+                    for dr,dc in dirs:
+                        nr,nc = r+dr,c+dc
+                        while 0<=nr<8 and 0<=nc<8:
+                            t = self.at(nr,nc)
+                            if t == 0: moves.append((pos,nr*8+nc))
+                            elif (t>0)!=(p>0): moves.append((pos,nr*8+nc)); break
+                            else: break
+                            if ap == 6: break  # king moves 1
+                            nr += dr; nc += dc
+        return moves
+
+def main():
+    b = Board(); b.display()
+    moves = b.gen_moves()
+    print(f"White moves: {len(moves)}")
+    print(f"Eval: {b.evaluate()}")
+
+if __name__ == "__main__": main()
