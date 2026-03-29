@@ -1,9 +1,9 @@
-# Chess Engine (Move Gen + Eval)
+# chess-engine
 
-Chess Engine (Move Gen + Eval) — zero-dependency Python implementation.
+Simple chess engine with move generation. Zero dependencies, single file, Python 3.8+.
 
 ## Usage
 
 ```bash
-python3 chess_engine.py
+python3 chess_engine.py --help
 ```
